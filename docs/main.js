@@ -193,3 +193,51 @@ function renderYearlyView(data, yyyy) {
     },
   });
 }
+
+// ---- UI controller ----
+function setupUI(data) {
+  const select = document.getElementById("period-select");
+  const tabs = document.querySelectorAll("nav.tabs button");
+  let currentView = "month";
+
+  function populateSelect() {
+    const periods = currentView === "month" ? getMonths(data) : getYears(data);
+    select.innerHTML = periods.map(p => `<option value="${p}">${p}</option>`).join("");
+  }
+
+  function render() {
+    const period = select.value;
+    if (!period) return;
+    if (currentView === "month") {
+      renderMonthlyView(data, period);
+    } else {
+      renderYearlyView(data, period);
+    }
+  }
+
+  tabs.forEach(btn => {
+    btn.addEventListener("click", () => {
+      tabs.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentView = btn.dataset.view;
+      populateSelect();
+      render();
+    });
+  });
+
+  select.addEventListener("change", render);
+
+  populateSelect();
+  render();
+}
+
+// ---- Bootstrap ----
+(async () => {
+  try {
+    const data = await loadData();
+    setupUI(data);
+  } catch (err) {
+    console.error(err);
+    setStatus(`載入失敗：${err.message}`);
+  }
+})();
