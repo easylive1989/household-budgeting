@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from common.notion import NotionApi
@@ -94,12 +94,19 @@ def main(output_path=DEFAULT_OUTPUT):
 
     rows = fetch_all_pages(api, LEDGER_DB_ID, _build_filter_all())
 
+    # Exclude the current (in-progress) month and any future-dated months —
+    # partial-month totals are misleading next to fully-closed months.
+    today = date.today()
+    current_yyyymm = f"{today.year}{today.month:02d}"
+
     grouped = defaultdict(list)
     for row in rows:
         try:
             yyyymm = _extract_yyyymm(row)
         except (KeyError, TypeError):
             # Skip rows without a parseable 時間 formula
+            continue
+        if yyyymm >= current_yyyymm:
             continue
         grouped[yyyymm].append(row)
 

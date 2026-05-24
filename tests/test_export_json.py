@@ -250,3 +250,54 @@ def test_main_fetches_all_pages_groups_by_month_writes_json(tmp_path, monkeypatc
     assert may["by_category"]["日常用品"] == 200
     assert may["by_funds"]["現金"] == 200
     assert may["total"] == 200
+
+
+def test_main_excludes_current_and_future_months(tmp_path, monkeypatch):
+    """Current month is in progress → partial totals are misleading, so skip them."""
+    import datetime as _dt
+    monkeypatch.setenv("NOTION_SECRET", "fake-token")
+
+    class FakeDate(_dt.date):
+        @classmethod
+        def today(cls):
+            return _dt.date(2026, 5, 24)
+    monkeypatch.setattr("ledger_analysis.export_json.date", FakeDate)
+
+    rows = [
+        # Past — should appear
+        {"properties": {
+            "分類": {"select": {"name": "飲食"}},
+            "Paul": {"number": -500}, "Lily": {"number": None},
+            "現金": {"number": None}, "銀行存款": {"number": None},
+            "時間": {"formula": {"date": {"start": "2026-04-10T10:00:00.000+00:00"}}},
+        }},
+        # Current month (today is 2026-05-24) — should be excluded
+        {"properties": {
+            "分類": {"select": {"name": "娛樂"}},
+            "Paul": {"number": -100}, "Lily": {"number": None},
+            "現金": {"number": None}, "銀行存款": {"number": None},
+            "時間": {"formula": {"date": {"start": "2026-05-15T10:00:00.000+00:00"}}},
+        }},
+        # Future-dated — should be excluded too
+        {"properties": {
+            "分類": {"select": {"name": "飲食"}},
+            "Paul": {"number": -999}, "Lily": {"number": None},
+            "現金": {"number": None}, "銀行存款": {"number": None},
+            "時間": {"formula": {"date": {"start": "2026-06-01T10:00:00.000+00:00"}}},
+        }},
+    ]
+
+    output_path = tmp_path / "data.json"
+
+    with patch("ledger_analysis.export_json.NotionApi") as MockApi:
+        mock_api = MagicMock()
+        MockApi.return_value = mock_api
+        resp = MagicMock()
+        resp.json.return_value = {"results": rows, "has_more": False, "next_cursor": None}
+        mock_api.query_database.return_value = resp
+
+        from ledger_analysis.export_json import main
+        main(output_path)
+
+    result = json.loads(output_path.read_text())
+    assert list(result["months"].keys()) == ["202604"]
