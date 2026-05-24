@@ -118,6 +118,40 @@ def test_check_record_exists_returns_false_when_results_empty():
         assert api.check_record_exists("db-id", "名目", "notfound") is False
 
 
+def test_update_database_schema_calls_databases_update():
+    with patch("common.notion.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.databases.update.return_value = {"id": "db-id"}
+
+        api = NotionApi(token="t")
+        properties = {"娛樂": {"number": {"format": "number"}}}
+        resp = api.update_database_schema("db-id", properties)
+
+        assert resp.status_code == 200
+        mock_client.databases.update.assert_called_once_with(
+            database_id="db-id", properties=properties
+        )
+
+
+def test_update_database_schema_returns_error_response_when_api_fails():
+    with patch("common.notion.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        err = APIResponseError(
+            response=httpx.Response(400, headers={}),
+            message="Invalid schema",
+            code=APIErrorCode.ValidationError,
+        )
+        mock_client.databases.update.side_effect = err
+
+        api = NotionApi(token="bad")
+        resp = api.update_database_schema("db-id", {})
+
+        assert resp.status_code == 400
+        assert "Invalid schema" in resp.json()["error"]
+
+
 def test_fake_resp_text_returns_json_string():
     from common.notion import _FakeResp
     resp = _FakeResp(200, {"hello": "世界"})

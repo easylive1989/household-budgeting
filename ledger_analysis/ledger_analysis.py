@@ -12,6 +12,10 @@ if not notion_secret:
     raise ValueError("請設定 NOTION_SECRET 環境變數")
 notion_api = NotionApi(notion_secret)
 
+DRY_RUN = os.getenv('DRY_RUN', '').lower() in ('1', 'true', 'yes')
+if DRY_RUN:
+    print("=== DRY RUN：不會實際寫入任何 Notion DB ===")
+
 today = datetime.date.today()
 
 # 計算上個月
@@ -114,29 +118,30 @@ response_all = notion_api.query_database('43c59e00321e49a69d85037f0f45ba7e', fil
 results_all = response_all.json()["results"]
 #print(results)
 
-# 圓餅圖分析數據統計
-entertainment = 0
-bill = 0
-food = 0
-sundries = 0
+# 分類 + 資金統計（以 abs 值累加，跟 backfill / export_json 一致）
+CATEGORY_FIELDS = ["娛樂", "飲食", "日常用品", "水電管理費"]
+FUND_FIELDS = ["Paul", "Lily", "現金", "銀行存款"]
+
+by_category = {c: 0 for c in CATEGORY_FIELDS}
+by_funds = {f: 0 for f in FUND_FIELDS}
 
 for result in results_chart:
     catalog = result["properties"]["分類"]["select"]["name"]
+    if catalog not in by_category:
+        continue
+    for field in FUND_FIELDS:
+        value = result["properties"].get(field, {}).get("number") or 0
+        amount = abs(value)
+        by_category[catalog] += amount
+        by_funds[field] += amount
+    print(f"分析數據 - {catalog}: " + ", ".join(
+        f"({f}: {result['properties'].get(f, {}).get('number') or 0})" for f in FUND_FIELDS
+    ))
 
-    paul = 0 if result["properties"]["Paul"]["number"] is None else result["properties"]["Paul"]["number"]
-    lily = 0 if result["properties"]["Lily"]["number"] is None else result["properties"]["Lily"]["number"]
-    cash = 0 if result["properties"]["現金"]["number"] is None else result["properties"]["現金"]["number"]
-    bank = 0 if result["properties"]["銀行存款"]["number"] is None else result["properties"]["銀行存款"]["number"]
-    
-    print(f"圓餅圖數據 - {catalog}: (paul: {paul}), (lily: {lily}), (cash: {cash}), (bank: {bank})")
-    if catalog == "水電管理費":
-        bill += paul + lily + cash + bank
-    if catalog == "娛樂":
-        entertainment += paul + lily + cash + bank
-    if catalog == "飲食":
-        food += paul + lily + cash + bank
-    if catalog == "日常用品":
-        sundries += paul + lily + cash + bank
+total_expense = sum(by_category.values())
+print(f"分類統計: {by_category}")
+print(f"資金統計: {by_funds}")
+print(f"總額: {total_expense}")
 
 # 開帳關帳統計（所有交易的總和）
 total_paul = 0
@@ -160,74 +165,32 @@ for result in results_all:
     
     print(f"開帳關帳數據 - {catalog}: (paul: {paul}), (lily: {lily}), (cash: {cash}), (bank: {bank})")
 
-total = entertainment + bill + food + sundries
-
 title = first_day_of_last_month.strftime("%Y%m")
-mermaid_content = f"""%%{{init: {{'theme': 'base', 'themeVariables': {{ 'pie1': '#FF0000', 'pie2': '#FFFF00', 'pie3': '#00FF00', 'pie4': '#0000FF', 'pie5': '#800080', 'pie6': '#ff0000', 'pie7': '#FFA500'}}}}}}%%
-pie showData
-        title {title} 分析 - 總額: {-total}
-        "娛樂" : {-entertainment}
-        "日常用品" : {-sundries}
-        "飲食" : {-food}
-        "水電管理費" : {-bill}"""
 
-print(f"{mermaid_content}")
+# 寫入新的分析結果 DB（結構化欄位，不含 Mermaid block）
+result_database_id = '36a8303f78f780d2886bc082a46a51dd'
+result_title_props = notion_api.get_property_names_by_type(result_database_id, ['title'])
+result_title_prop = result_title_props['title']
 
-# 自動偵測結果資料庫的屬性名稱
-result_database_id = '25c8303f78f780fd9227e5e9d54c6b43'
-result_props = notion_api.get_property_names_by_type(result_database_id, ['title', 'rich_text'])
-
-# 創建 Notion 頁面的屬性
 page_properties = {
-    result_props['title']: {
-        "title": [
-            {
-                "text": {
-                    "content": title
-                }
-            }
-        ]
-    }
+    result_title_prop: {"title": [{"text": {"content": title}}]},
+    "總額": {"number": total_expense},
 }
+for c in CATEGORY_FIELDS:
+    page_properties[c] = {"number": by_category[c]}
+for f in FUND_FIELDS:
+    page_properties[f] = {"number": by_funds[f]}
 
-# 檢查分析結果頁面是否已存在
-if notion_api.check_record_exists(result_database_id, result_props['title'], title):
+if notion_api.check_record_exists(result_database_id, result_title_prop, title):
     print(f"分析結果頁面 '{title}' 已存在，跳過創建")
+elif DRY_RUN:
+    print(f"[DRY RUN] 會創建分析結果頁面: {title} → {page_properties}")
 else:
-    # 創建新的 Notion 頁面
     create_response = notion_api.create_page(result_database_id, page_properties)
-
     if create_response.status_code == 200:
-        page_id = create_response.json()['id']
-        print(f"成功創建 Notion 頁面: {title}, ID: {page_id}")
-        
-        # 建立 Mermaid code block 內容
-        mermaid_block = {
-            "object": "block",
-            "type": "code",
-            "code": {
-                "rich_text": [
-                    {
-                        "type": "text",
-                        "text": {
-                            "content": mermaid_content
-                        }
-                    }
-                ],
-                "language": "mermaid"
-            }
-        }
-        
-        # 將 Mermaid 圖表加入頁面
-        block_response = notion_api.append_block_children(page_id, [mermaid_block])
-        
-        if block_response.status_code == 200:
-            print(f"成功加入 Mermaid 圖表到頁面")
-        else:
-            print(f"加入 Mermaid 圖表失敗: {block_response.status_code}")
-            print(block_response.text)
+        print(f"成功創建分析結果頁面: {title}")
     else:
-        print(f"創建 Notion 頁面失敗: {create_response.status_code}")
+        print(f"創建分析結果頁面失敗: {create_response.status_code}")
         print(create_response.text)
 
 # 自動偵測帳本資料庫的屬性名稱
@@ -299,6 +262,8 @@ open_properties = {
 # 檢查關帳記錄是否已存在
 if notion_api.check_record_exists(ledger_database_id, ledger_props['title'], close_title):
     print(f"關帳記錄 '{close_title}' 已存在，跳過創建")
+elif DRY_RUN:
+    print(f"[DRY RUN] 會創建關帳記錄: {close_title} (Paul: {-total_paul}, Lily: {-total_lily}, 現金: {-total_cash}, 銀行: {-total_bank})")
 else:
     # 創建關帳記錄
     close_response = notion_api.create_page(ledger_database_id, close_properties)
@@ -311,6 +276,8 @@ else:
 # 檢查開帳記錄是否已存在
 if notion_api.check_record_exists(ledger_database_id, ledger_props['title'], next_month_title):
     print(f"開帳記錄 '{next_month_title}' 已存在，跳過創建")
+elif DRY_RUN:
+    print(f"[DRY RUN] 會創建開帳記錄: {next_month_title} (Paul: {total_paul}, Lily: {total_lily}, 現金: {total_cash}, 銀行: {total_bank})")
 else:
     # 創建開帳記錄
     open_response = notion_api.create_page(ledger_database_id, open_properties)

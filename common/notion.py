@@ -46,6 +46,15 @@ class NotionApi:
         except APIResponseError as e:
             return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
 
+    def update_database_schema(self, db_id, properties):
+        try:
+            data = self.client.databases.update(
+                database_id=db_id, properties=properties
+            )
+            return _FakeResp(200, data)
+        except APIResponseError as e:
+            return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
+
     def get_property_names_by_type(self, db_id, types):
         db = self.client.databases.retrieve(database_id=db_id)
         out = {}

@@ -1,101 +1,121 @@
 import json
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from ledger_analysis.export_json import (
-    aggregate_month,
     fetch_all_pages,
+    page_to_month_entry,
     save_data,
 )
 
 
-def _row(category, paul=None, lily=None, cash=None, bank=None, time_start=None):
-    """Helper: build a fake Notion page dict matching the schema."""
+CATEGORIES = ["娛樂", "飲食", "日常用品", "水電管理費"]
+FUNDS = ["Paul", "Lily", "現金", "銀行存款"]
+
+
+def _make_page(title, by_category=None, by_funds=None, total=0, title_prop_name="月份"):
+    """Helper: build a fake Notion analysis-DB page with the expected shape."""
+    by_category = by_category or {}
+    by_funds = by_funds or {}
     props = {
-        "分類": {"select": {"name": category}},
-        "Paul": {"number": paul},
-        "Lily": {"number": lily},
-        "現金": {"number": cash},
-        "銀行存款": {"number": bank},
+        title_prop_name: {
+            "type": "title",
+            "title": [{"plain_text": title}],
+        },
+        "總額": {"type": "number", "number": total},
     }
-    if time_start is not None:
-        props["時間"] = {"formula": {"date": {"start": time_start}}}
+    for c in CATEGORIES:
+        props[c] = {"type": "number", "number": by_category.get(c, 0)}
+    for f in FUNDS:
+        props[f] = {"type": "number", "number": by_funds.get(f, 0)}
     return {"properties": props}
 
 
-def test_aggregate_month_returns_by_category_by_funds_total():
-    rows = [
-        _row("飲食", bank=-1000),
-        _row("飲食", paul=-500),
-        _row("娛樂", lily=-300),
-        _row("日常用品", cash=-200),
-        _row("水電管理費", bank=-3000),
-    ]
+def test_page_to_month_entry_extracts_yyyymm_and_numbers():
+    page = _make_page(
+        "202504",
+        by_category={"飲食": 1000, "娛樂": 300},
+        by_funds={"Paul": 800, "Lily": 500},
+        total=1300,
+    )
 
-    result = aggregate_month(rows)
+    yyyymm, entry = page_to_month_entry(page)
 
-    assert result == {
-        "by_category": {
-            "飲食": 1500,
-            "娛樂": 300,
-            "日常用品": 200,
-            "水電管理費": 3000,
-        },
-        "by_funds": {
-            "Paul": 500,
-            "Lily": 300,
-            "現金": 200,
-            "銀行存款": 4000,
-        },
-        "total": 5000,
+    assert yyyymm == "202504"
+    assert entry["by_category"] == {"娛樂": 300, "飲食": 1000, "日常用品": 0, "水電管理費": 0}
+    assert entry["by_funds"] == {"Paul": 800, "Lily": 500, "現金": 0, "銀行存款": 0}
+    assert entry["total"] == 1300
+
+
+def test_page_to_month_entry_skips_non_yyyymm_title():
+    assert page_to_month_entry(_make_page("Random Page")) is None
+    assert page_to_month_entry(_make_page("2025-04")) is None  # length 7
+    assert page_to_month_entry(_make_page("20250")) is None    # length 5
+
+
+def test_page_to_month_entry_skips_empty_title():
+    assert page_to_month_entry(_make_page("")) is None
+
+
+def test_page_to_month_entry_handles_null_numbers():
+    page = _make_page("202504")
+    page["properties"]["飲食"]["number"] = None
+    page["properties"]["總額"]["number"] = None
+
+    _, entry = page_to_month_entry(page)
+
+    assert entry["by_category"]["飲食"] == 0
+    assert entry["total"] == 0
+
+
+def test_page_to_month_entry_finds_title_under_any_property_name():
+    """Title property can be named anything — code locates it by type, not name."""
+    page = _make_page("202504", title_prop_name="自訂欄位名稱")
+    yyyymm, _ = page_to_month_entry(page)
+    assert yyyymm == "202504"
+
+
+def test_fetch_all_pages_single_page():
+    api = MagicMock()
+    resp = MagicMock()
+    resp.json.return_value = {
+        "results": [{"id": "a"}, {"id": "b"}],
+        "has_more": False,
+        "next_cursor": None,
     }
+    api.query_database.return_value = resp
+
+    rows = fetch_all_pages(api, "db-id")
+
+    assert rows == [{"id": "a"}, {"id": "b"}]
+    assert api.query_database.call_count == 1
+    first_payload = api.query_database.call_args_list[0][0][1]
+    assert "start_cursor" not in first_payload
 
 
-def test_aggregate_month_handles_null_number_fields():
-    rows = [_row("飲食", paul=-500)]  # other 3 fields default to None
-
-    result = aggregate_month(rows)
-
-    assert result["by_category"]["飲食"] == 500
-    assert result["by_funds"]["Paul"] == 500
-    assert result["by_funds"]["Lily"] == 0
-    assert result["by_funds"]["現金"] == 0
-    assert result["by_funds"]["銀行存款"] == 0
-    assert result["total"] == 500
-
-
-def test_aggregate_month_ignores_unknown_categories():
-    rows = [
-        _row("飲食", paul=-500),
-        _row("收入", paul=10000),
-        _row("財務整理", paul=-99999),
-    ]
-
-    result = aggregate_month(rows)
-
-    assert result["by_category"] == {
-        "飲食": 500,
-        "娛樂": 0,
-        "日常用品": 0,
-        "水電管理費": 0,
+def test_fetch_all_pages_multi_page_follows_cursor():
+    api = MagicMock()
+    resp1 = MagicMock()
+    resp1.json.return_value = {
+        "results": [{"id": "a"}], "has_more": True, "next_cursor": "c1",
     }
-    assert result["total"] == 500
-    # Funds should also not include the filtered rows
-    assert result["by_funds"]["Paul"] == 500
-
-
-def test_aggregate_month_returns_zeros_for_missing_target_categories():
-    """If a target category has no transactions that month, key should still be 0."""
-    rows = [_row("飲食", paul=-500)]
-
-    result = aggregate_month(rows)
-
-    assert result["by_category"] == {
-        "飲食": 500,
-        "娛樂": 0,
-        "日常用品": 0,
-        "水電管理費": 0,
+    resp2 = MagicMock()
+    resp2.json.return_value = {
+        "results": [{"id": "b"}], "has_more": True, "next_cursor": "c2",
     }
+    resp3 = MagicMock()
+    resp3.json.return_value = {
+        "results": [{"id": "c"}], "has_more": False, "next_cursor": None,
+    }
+    api.query_database.side_effect = [resp1, resp2, resp3]
+
+    rows = fetch_all_pages(api, "db-id")
+
+    assert rows == [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    assert api.query_database.call_count == 3
+    payloads = [c[0][1] for c in api.query_database.call_args_list]
+    assert "start_cursor" not in payloads[0]
+    assert payloads[1]["start_cursor"] == "c1"
+    assert payloads[2]["start_cursor"] == "c2"
 
 
 def test_save_data_writes_json_with_indent(tmp_path):
@@ -106,185 +126,17 @@ def test_save_data_writes_json_with_indent(tmp_path):
 
     loaded = json.loads(f.read_text())
     assert loaded == data
-    # Should be human-readable (indented)
     assert "\n  " in f.read_text()
 
 
-def test_fetch_all_pages_single_page():
-    """When Notion returns has_more=False, query_database is called exactly once."""
-    api = MagicMock()
-    resp = MagicMock()
-    resp.json.return_value = {
-        "results": [{"id": "a"}, {"id": "b"}],
-        "has_more": False,
-        "next_cursor": None,
-    }
-    api.query_database.return_value = resp
-
-    rows = fetch_all_pages(api, "db-id", {"filter": {"foo": "bar"}})
-
-    assert rows == [{"id": "a"}, {"id": "b"}]
-    assert api.query_database.call_count == 1
-    # First call should not carry a start_cursor
-    _, first_payload = api.query_database.call_args_list[0][0]
-    assert "start_cursor" not in first_payload
-
-
-def test_fetch_all_pages_multi_page_follows_cursor():
-    """Pagination: keep calling until has_more is False, passing next_cursor each time."""
-    api = MagicMock()
-
-    resp1 = MagicMock()
-    resp1.json.return_value = {
-        "results": [{"id": "a"}],
-        "has_more": True,
-        "next_cursor": "cursor-1",
-    }
-    resp2 = MagicMock()
-    resp2.json.return_value = {
-        "results": [{"id": "b"}],
-        "has_more": True,
-        "next_cursor": "cursor-2",
-    }
-    resp3 = MagicMock()
-    resp3.json.return_value = {
-        "results": [{"id": "c"}],
-        "has_more": False,
-        "next_cursor": None,
-    }
-    api.query_database.side_effect = [resp1, resp2, resp3]
-
-    rows = fetch_all_pages(api, "db-id", {"filter": {"foo": "bar"}})
-
-    assert rows == [{"id": "a"}, {"id": "b"}, {"id": "c"}]
-    assert api.query_database.call_count == 3
-
-    # Inspect each call's payload
-    payloads = [call[0][1] for call in api.query_database.call_args_list]
-    assert "start_cursor" not in payloads[0]
-    assert payloads[1]["start_cursor"] == "cursor-1"
-    assert payloads[2]["start_cursor"] == "cursor-2"
-    # Filter should be preserved on every call
-    for p in payloads:
-        assert p["filter"] == {"foo": "bar"}
-
-
-def test_main_fetches_all_pages_groups_by_month_writes_json(tmp_path, monkeypatch):
-    """End-to-end main(): paginated Notion response → grouped months → JSON file."""
+def test_main_reads_pages_and_writes_json(tmp_path, monkeypatch):
+    """End-to-end: paginated analysis-DB pages → JSON file, non-YYYYMM rows skipped."""
     monkeypatch.setenv("NOTION_SECRET", "fake-token")
 
-    page1_rows = [
-        {"properties": {
-            "分類": {"select": {"name": "飲食"}},
-            "Paul": {"number": -1000},
-            "Lily": {"number": None},
-            "現金": {"number": None},
-            "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2025-04-15T10:00:00.000+00:00"}}},
-        }},
-        {"properties": {
-            "分類": {"select": {"name": "娛樂"}},
-            "Paul": {"number": None},
-            "Lily": {"number": -300},
-            "現金": {"number": None},
-            "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2025-04-20T10:00:00.000+00:00"}}},
-        }},
-    ]
-    page2_rows = [
-        {"properties": {
-            "分類": {"select": {"name": "日常用品"}},
-            "Paul": {"number": None},
-            "Lily": {"number": None},
-            "現金": {"number": -200},
-            "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2025-05-01T10:00:00.000+00:00"}}},
-        }},
-    ]
-
-    output_path = tmp_path / "data.json"
-
-    with patch("ledger_analysis.export_json.NotionApi") as MockApi:
-        mock_api = MagicMock()
-        MockApi.return_value = mock_api
-
-        resp1 = MagicMock()
-        resp1.json.return_value = {
-            "results": page1_rows,
-            "has_more": True,
-            "next_cursor": "cursor-1",
-        }
-        resp2 = MagicMock()
-        resp2.json.return_value = {
-            "results": page2_rows,
-            "has_more": False,
-            "next_cursor": None,
-        }
-        mock_api.query_database.side_effect = [resp1, resp2]
-
-        from ledger_analysis.export_json import main
-        main(output_path)
-
-    # Verify pagination happened: two calls, second has start_cursor
-    assert mock_api.query_database.call_count == 2
-    second_call_payload = mock_api.query_database.call_args_list[1][0][1]
-    assert second_call_payload["start_cursor"] == "cursor-1"
-
-    result = json.loads(output_path.read_text())
-    assert result["categories"] == ["娛樂", "飲食", "日常用品", "水電管理費"]
-    assert result["members"] == ["Paul", "Lily"]
-    assert result["generated_at"] is not None
-
-    # Both months should be present and aggregated correctly
-    assert "202504" in result["months"]
-    assert "202505" in result["months"]
-
-    apr = result["months"]["202504"]
-    assert apr["by_category"]["飲食"] == 1000
-    assert apr["by_category"]["娛樂"] == 300
-    assert apr["by_funds"]["Paul"] == 1000
-    assert apr["by_funds"]["Lily"] == 300
-    assert apr["total"] == 1300
-
-    may = result["months"]["202505"]
-    assert may["by_category"]["日常用品"] == 200
-    assert may["by_funds"]["現金"] == 200
-    assert may["total"] == 200
-
-
-def test_main_excludes_current_and_future_months(tmp_path, monkeypatch):
-    """Current month is in progress → partial totals are misleading, so skip them."""
-    import datetime as _dt
-    monkeypatch.setenv("NOTION_SECRET", "fake-token")
-
-    class FakeDate(_dt.date):
-        @classmethod
-        def today(cls):
-            return _dt.date(2026, 5, 24)
-    monkeypatch.setattr("ledger_analysis.export_json.date", FakeDate)
-
-    rows = [
-        # Past — should appear
-        {"properties": {
-            "分類": {"select": {"name": "飲食"}},
-            "Paul": {"number": -500}, "Lily": {"number": None},
-            "現金": {"number": None}, "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2026-04-10T10:00:00.000+00:00"}}},
-        }},
-        # Current month (today is 2026-05-24) — should be excluded
-        {"properties": {
-            "分類": {"select": {"name": "娛樂"}},
-            "Paul": {"number": -100}, "Lily": {"number": None},
-            "現金": {"number": None}, "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2026-05-15T10:00:00.000+00:00"}}},
-        }},
-        # Future-dated — should be excluded too
-        {"properties": {
-            "分類": {"select": {"name": "飲食"}},
-            "Paul": {"number": -999}, "Lily": {"number": None},
-            "現金": {"number": None}, "銀行存款": {"number": None},
-            "時間": {"formula": {"date": {"start": "2026-06-01T10:00:00.000+00:00"}}},
-        }},
+    pages = [
+        _make_page("202504", by_category={"飲食": 1000}, by_funds={"Paul": 1000}, total=1000),
+        _make_page("Other Random Page"),  # should be skipped
+        _make_page("202505", by_category={"娛樂": 500}, by_funds={"Lily": 500}, total=500),
     ]
 
     output_path = tmp_path / "data.json"
@@ -293,11 +145,19 @@ def test_main_excludes_current_and_future_months(tmp_path, monkeypatch):
         mock_api = MagicMock()
         MockApi.return_value = mock_api
         resp = MagicMock()
-        resp.json.return_value = {"results": rows, "has_more": False, "next_cursor": None}
+        resp.json.return_value = {"results": pages, "has_more": False, "next_cursor": None}
         mock_api.query_database.return_value = resp
 
         from ledger_analysis.export_json import main
         main(output_path)
 
     result = json.loads(output_path.read_text())
-    assert list(result["months"].keys()) == ["202604"]
+
+    assert result["categories"] == CATEGORIES
+    assert result["members"] == ["Paul", "Lily"]
+    assert result["generated_at"] is not None
+    assert set(result["months"].keys()) == {"202504", "202505"}
+    assert result["months"]["202504"]["total"] == 1000
+    assert result["months"]["202504"]["by_category"]["飲食"] == 1000
+    assert result["months"]["202505"]["by_category"]["娛樂"] == 500
+    assert result["months"]["202505"]["by_funds"]["Lily"] == 500
