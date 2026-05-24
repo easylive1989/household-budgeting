@@ -5,8 +5,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import json
-import calendar
-from datetime import date, datetime, time, timedelta, timezone
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from common.notion import NotionApi
@@ -42,24 +42,6 @@ def aggregate_month(rows):
     return {"by_category": by_category, "by_funds": by_funds, "total": total}
 
 
-def load_existing_data(path):
-    """Read existing data.json or return empty skeleton if file doesn't exist."""
-    path = Path(path)
-    if not path.exists():
-        return {
-            "generated_at": None,
-            "categories": list(TARGET_CATEGORIES),
-            "members": ["Paul", "Lily"],
-            "months": {},
-        }
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def merge_month(data, yyyymm, month_agg):
-    """Insert or overwrite the given month's aggregate in data['months']."""
-    data["months"][yyyymm] = month_agg
-
-
 def save_data(path, data):
     """Write data as pretty-printed JSON (ensure_ascii=False for Chinese)."""
     path = Path(path)
@@ -69,54 +51,70 @@ def save_data(path, data):
     )
 
 
-def _last_month_range(today):
-    """Return (start_iso, end_iso, yyyymm) for the month before `today`."""
-    if today.month == 1:
-        year, month = today.year - 1, 12
-    else:
-        year, month = today.year, today.month - 1
-    first = date(year, month, 1)
-    last_day = calendar.monthrange(year, month)[1]
-    last = date(year, month, last_day)
-    start = datetime.combine(first, time.min) - timedelta(seconds=1)
-    end = datetime.combine(last, time.max)
-    return start.isoformat(), end.isoformat(), f"{year}{month:02d}"
-
-
-def _build_filter(start_iso, end_iso):
-    """Build the Notion query filter for the target categories within [start, end]."""
-    # Task 5 verified: bare `date` filter works on the formula-typed `時間` property
-    # for notion-client v2.x. If migrating to v3+, switch to {"formula": {"date": ...}}.
+def _build_filter_all():
+    """Build the Notion query filter for the target categories (no date range)."""
     return {
         "filter": {
-            "and": [
-                {"property": "時間", "date": {"after": start_iso}},
-                {"property": "時間", "date": {"before": end_iso}},
-                {
-                    "or": [
-                        {"property": "分類", "select": {"equals": c}}
-                        for c in TARGET_CATEGORIES
-                    ]
-                },
+            "or": [
+                {"property": "分類", "select": {"equals": c}}
+                for c in TARGET_CATEGORIES
             ]
         }
     }
+
+
+def fetch_all_pages(api, db_id, filter_body):
+    """Fetch all rows from Notion, transparently following pagination cursors."""
+    all_rows = []
+    payload = dict(filter_body)
+    while True:
+        resp = api.query_database(db_id, payload)
+        data = resp.json()
+        all_rows.extend(data.get("results", []))
+        if not data.get("has_more"):
+            break
+        next_cursor = data.get("next_cursor")
+        if not next_cursor:
+            break
+        payload = dict(filter_body)
+        payload["start_cursor"] = next_cursor
+    return all_rows
+
+
+def _extract_yyyymm(row):
+    """Pull 'YYYYMM' from row['properties']['時間']['formula']['date']['start']."""
+    start = row["properties"]["時間"]["formula"]["date"]["start"]
+    # ISO-8601 like "2025-04-15T10:00:00.000+00:00" — first 7 chars give YYYY-MM
+    return start[:4] + start[5:7]
 
 
 def main(output_path=DEFAULT_OUTPUT):
     token = os.environ["NOTION_SECRET"]
     api = NotionApi(token)
 
-    start_iso, end_iso, yyyymm = _last_month_range(date.today())
-    resp = api.query_database(LEDGER_DB_ID, _build_filter(start_iso, end_iso))
-    rows = resp.json()["results"]
+    rows = fetch_all_pages(api, LEDGER_DB_ID, _build_filter_all())
 
-    month_agg = aggregate_month(rows)
-    data = load_existing_data(output_path)
-    merge_month(data, yyyymm, month_agg)
-    data["generated_at"] = datetime.now(timezone.utc).isoformat()
+    grouped = defaultdict(list)
+    for row in rows:
+        try:
+            yyyymm = _extract_yyyymm(row)
+        except (KeyError, TypeError):
+            # Skip rows without a parseable 時間 formula
+            continue
+        grouped[yyyymm].append(row)
+
+    months = {ym: aggregate_month(rs) for ym, rs in grouped.items()}
+    data = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "categories": list(TARGET_CATEGORIES),
+        "members": ["Paul", "Lily"],
+        "months": months,
+    }
     save_data(output_path, data)
-    print(f"Exported {yyyymm}: total={month_agg['total']}")
+    print(
+        f"Exported {len(months)} months from {len(rows)} rows: "
+        f"{sorted(months.keys())}"
+    )
 
 
 if __name__ == "__main__":
