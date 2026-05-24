@@ -40,3 +40,18 @@ class NotionApi:
             return _FakeResp(200, data)
         except APIResponseError as e:
             return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
+
+    def get_property_names_by_type(self, db_id, types):
+        db = self.client.databases.retrieve(database_id=db_id)
+        out = {}
+        for name, prop in db["properties"].items():
+            if prop["type"] in types and prop["type"] not in out:
+                out[prop["type"]] = name
+        return out
+
+    def check_record_exists(self, db_id, title_prop_name, value):
+        resp = self.client.databases.query(
+            database_id=db_id,
+            filter={"property": title_prop_name, "title": {"equals": value}},
+        )
+        return len(resp["results"]) > 0

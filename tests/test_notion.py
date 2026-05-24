@@ -71,3 +71,49 @@ def test_append_block_children_calls_blocks_children_append():
         mock_client.blocks.children.append.assert_called_once_with(
             block_id="page-id", children=blocks
         )
+
+
+def test_get_property_names_by_type_filters_properties():
+    with patch("common.notion.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.databases.retrieve.return_value = {
+            "properties": {
+                "名目": {"type": "title"},
+                "備註": {"type": "rich_text"},
+                "Paul": {"type": "number"},
+            }
+        }
+
+        api = NotionApi(token="t")
+        result = api.get_property_names_by_type("db-id", ["title", "rich_text"])
+
+        assert result == {"title": "名目", "rich_text": "備註"}
+
+
+def test_check_record_exists_returns_true_when_results_nonempty():
+    with patch("common.notion.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.databases.query.return_value = {
+            "results": [{"id": "found"}]
+        }
+
+        api = NotionApi(token="t")
+        exists = api.check_record_exists("db-id", "名目", "202504")
+
+        assert exists is True
+        mock_client.databases.query.assert_called_once_with(
+            database_id="db-id",
+            filter={"property": "名目", "title": {"equals": "202504"}},
+        )
+
+
+def test_check_record_exists_returns_false_when_results_empty():
+    with patch("common.notion.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.databases.query.return_value = {"results": []}
+
+        api = NotionApi(token="t")
+        assert api.check_record_exists("db-id", "名目", "notfound") is False
