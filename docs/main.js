@@ -5,12 +5,6 @@ const CATEGORY_COLORS = {
   飲食: "#00FF00",
   水電管理費: "#0000FF",
 };
-const FUND_COLORS = {
-  Paul: "#4E79A7",
-  Lily: "#F28E2B",
-  現金: "#59A14F",
-  銀行存款: "#76B7B2",
-};
 
 // ---- State ----
 let chartInstances = { pie: null, bar: null, line: null };
@@ -20,10 +14,6 @@ async function loadData() {
   const resp = await fetch("./data.json", { cache: "no-store" });
   if (!resp.ok) throw new Error(`Failed to load data.json: ${resp.status}`);
   return await resp.json();
-}
-
-function getMonths(data) {
-  return Object.keys(data.months).sort().reverse(); // newest first
 }
 
 function getYears(data) {
@@ -47,77 +37,9 @@ function setStatus(msg) {
   document.getElementById("status").textContent = msg;
 }
 
-// ---- Monthly view ----
-function renderMonthlyView(data, yyyymm) {
-  destroyCharts();
-  const month = data.months[yyyymm];
-  if (!month) {
-    setStatus(`${yyyymm} 沒有資料`);
-    return;
-  }
-  setStatus(`月視圖：${yyyymm}（總額 ${month.total.toLocaleString()}）`);
-
-  // --- Pie: by_category ---
-  const cats = data.categories;
-  chartInstances.pie = new Chart(document.getElementById("pie"), {
-    type: "pie",
-    data: {
-      labels: cats,
-      datasets: [{
-        data: cats.map(c => month.by_category[c] || 0),
-        backgroundColor: cats.map(c => CATEGORY_COLORS[c]),
-      }],
-    },
-    options: {
-      plugins: { title: { display: true, text: `${yyyymm} 分類佔比` } },
-    },
-  });
-
-  // --- Bar: by_funds (4 bars) ---
-  const funds = Object.keys(month.by_funds);
-  chartInstances.bar = new Chart(document.getElementById("bar"), {
-    type: "bar",
-    data: {
-      labels: funds,
-      datasets: [{
-        label: "支出",
-        data: funds.map(f => month.by_funds[f] || 0),
-        backgroundColor: funds.map(f => FUND_COLORS[f] || "#999"),
-      }],
-    },
-    options: {
-      plugins: { title: { display: true, text: `${yyyymm} 資金來源支出` }, legend: { display: false } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
-
-  // --- Line: past 6 months category trend ---
-  const allMonths = Object.keys(data.months).sort();
-  const idx = allMonths.indexOf(yyyymm);
-  const window = allMonths.slice(Math.max(0, idx - 5), idx + 1); // up to 6 months ending at yyyymm
-  chartInstances.line = new Chart(document.getElementById("line"), {
-    type: "line",
-    data: {
-      labels: window,
-      datasets: cats.map(c => ({
-        label: c,
-        data: window.map(m => (data.months[m].by_category[c] || 0)),
-        borderColor: CATEGORY_COLORS[c],
-        backgroundColor: CATEGORY_COLORS[c],
-        tension: 0.2,
-      })),
-    },
-    options: {
-      plugins: { title: { display: true, text: `近 ${window.length} 個月分類趨勢` } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
-}
-
 // ---- Yearly view ----
 function renderYearlyView(data, yyyy) {
   destroyCharts();
-  // Collect all months belonging to that year
   const monthsInYear = Object.keys(data.months)
     .filter(m => m.startsWith(yyyy))
     .sort();
@@ -126,8 +48,9 @@ function renderYearlyView(data, yyyy) {
     return;
   }
 
-  // Aggregate by_category for the year
   const cats = data.categories;
+
+  // Aggregate by_category for the full year
   const yearCat = Object.fromEntries(cats.map(c => [c, 0]));
   let yearTotal = 0;
   for (const m of monthsInYear) {
@@ -136,9 +59,12 @@ function renderYearlyView(data, yyyy) {
     }
     yearTotal += data.months[m].total || 0;
   }
-  setStatus(`年視圖:${yyyy}（總額 ${yearTotal.toLocaleString()}）`);
+  setStatus(`${yyyy} 年（總額 ${yearTotal.toLocaleString()}）`);
 
-  // --- Pie: yearly by_category ---
+  // 12-month slots — null for months without data (未到的月份)
+  const months12 = Array.from({ length: 12 }, (_, i) => `${yyyy}${String(i+1).padStart(2,"0")}`);
+
+  // --- Pie: yearly category proportions ---
   chartInstances.pie = new Chart(document.getElementById("pie"), {
     type: "pie",
     data: {
@@ -149,46 +75,57 @@ function renderYearlyView(data, yyyy) {
       }],
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { title: { display: true, text: `${yyyy} 年度分類佔比` } },
     },
   });
 
-  // --- Bar: 12 months total ---
-  const months12 = Array.from({ length: 12 }, (_, i) => `${yyyy}${String(i+1).padStart(2,"0")}`);
-  const monthTotals = months12.map(m => (data.months[m] ? data.months[m].total : 0));
+  // --- Bar: cumulative spending (running total through each month) ---
+  let running = 0;
+  const cumulative = months12.map(m => {
+    if (data.months[m]) {
+      running += data.months[m].total;
+      return running;
+    }
+    return null; // no bar for future months
+  });
   chartInstances.bar = new Chart(document.getElementById("bar"), {
     type: "bar",
     data: {
-      labels: months12.map(m => m.slice(4)), // "01"..."12"
+      labels: months12.map(m => m.slice(4)),
       datasets: [{
-        label: "每月總支出",
-        data: monthTotals,
+        label: "累積支出",
+        data: cumulative,
         backgroundColor: "#2c5aa0",
       }],
     },
     options: {
-      plugins: { title: { display: true, text: `${yyyy} 每月總支出` }, legend: { display: false } },
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { title: { display: true, text: `${yyyy} 累積支出` }, legend: { display: false } },
       scales: { y: { beginAtZero: true } },
     },
   });
 
-  // --- Line: cumulative total ---
-  let running = 0;
-  const cumulative = monthTotals.map(v => (running += v));
+  // --- Line: 4 categories, monthly spend, straight lines, no points on future months ---
   chartInstances.line = new Chart(document.getElementById("line"), {
     type: "line",
     data: {
       labels: months12.map(m => m.slice(4)),
-      datasets: [{
-        label: "累計支出",
-        data: cumulative,
-        borderColor: "#c0392b",
-        backgroundColor: "#c0392b",
-        tension: 0.2,
-      }],
+      datasets: cats.map(c => ({
+        label: c,
+        data: months12.map(m => data.months[m] ? (data.months[m].by_category[c] || 0) : null),
+        borderColor: CATEGORY_COLORS[c],
+        backgroundColor: CATEGORY_COLORS[c],
+        tension: 0,        // straight lines
+        spanGaps: false,    // don't connect across null (future) months
+      })),
     },
     options: {
-      plugins: { title: { display: true, text: `${yyyy} 累計支出趨勢` }, legend: { display: false } },
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { title: { display: true, text: `${yyyy} 各分類每月支出` } },
       scales: { y: { beginAtZero: true } },
     },
   });
@@ -197,36 +134,19 @@ function renderYearlyView(data, yyyy) {
 // ---- UI controller ----
 function setupUI(data) {
   const select = document.getElementById("period-select");
-  const tabs = document.querySelectorAll("nav.tabs button");
-  let currentView = "month";
 
   function populateSelect() {
-    const periods = currentView === "month" ? getMonths(data) : getYears(data);
-    select.innerHTML = periods.map(p => `<option value="${p}">${p}</option>`).join("");
+    const years = getYears(data);
+    select.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
   }
 
   function render() {
-    const period = select.value;
-    if (!period) return;
-    if (currentView === "month") {
-      renderMonthlyView(data, period);
-    } else {
-      renderYearlyView(data, period);
-    }
+    const year = select.value;
+    if (!year) return;
+    renderYearlyView(data, year);
   }
 
-  tabs.forEach(btn => {
-    btn.addEventListener("click", () => {
-      tabs.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentView = btn.dataset.view;
-      populateSelect();
-      render();
-    });
-  });
-
   select.addEventListener("change", render);
-
   populateSelect();
   render();
 }
