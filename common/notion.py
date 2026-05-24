@@ -11,6 +11,11 @@ class _FakeResp:
     def json(self):
         return self._data
 
+    @property
+    def text(self):
+        import json
+        return json.dumps(self._data, ensure_ascii=False)
+
 
 class NotionApi:
     def __init__(self, token):

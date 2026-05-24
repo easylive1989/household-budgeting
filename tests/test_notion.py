@@ -116,3 +116,9 @@ def test_check_record_exists_returns_false_when_results_empty():
 
         api = NotionApi(token="t")
         assert api.check_record_exists("db-id", "名目", "notfound") is False
+
+
+def test_fake_resp_text_returns_json_string():
+    from common.notion import _FakeResp
+    resp = _FakeResp(200, {"hello": "世界"})
+    assert resp.text == '{"hello": "世界"}'
