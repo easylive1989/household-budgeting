@@ -22,3 +22,21 @@ class NotionApi:
             return _FakeResp(200, data)
         except APIResponseError as e:
             return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
+
+    def create_page(self, db_id, properties):
+        try:
+            data = self.client.pages.create(
+                parent={"database_id": db_id}, properties=properties
+            )
+            return _FakeResp(200, data)
+        except APIResponseError as e:
+            return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
+
+    def append_block_children(self, page_id, blocks):
+        try:
+            data = self.client.blocks.children.append(
+                block_id=page_id, children=blocks
+            )
+            return _FakeResp(200, data)
+        except APIResponseError as e:
+            return _FakeResp(getattr(e, "status", 500), {"error": str(e)})
