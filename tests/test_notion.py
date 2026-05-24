@@ -1,6 +1,7 @@
 from unittest.mock import patch, MagicMock
 import httpx
 from notion_client import APIResponseError
+from notion_client.errors import APIErrorCode
 from common.notion import NotionApi
 
 
@@ -25,11 +26,9 @@ def test_query_database_returns_error_response_when_api_fails():
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         err = APIResponseError(
-            code="unauthorized",
-            status=401,
+            response=httpx.Response(401, headers={}),
             message="Unauthorized",
-            headers=httpx.Headers(),
-            raw_body_text="",
+            code=APIErrorCode.Unauthorized,
         )
         mock_client.databases.query.side_effect = err
 
