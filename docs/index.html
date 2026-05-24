@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>家庭記帳分析</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "PingFang TC", "Microsoft JhengHei", sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1rem;
+      background: #fafafa;
+      color: #222;
+    }
+    header h1 { margin-bottom: 0.5rem; }
+    nav.tabs { display: flex; gap: 0.5rem; margin: 1rem 0; }
+    nav.tabs button {
+      padding: 0.5rem 1rem;
+      border: 1px solid #ccc;
+      background: white;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    nav.tabs button.active { background: #2c5aa0; color: white; border-color: #2c5aa0; }
+    .picker { margin-bottom: 1.5rem; }
+    .picker select { padding: 0.4rem; font-size: 1rem; }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .chart-line { grid-column: 1 / -1; }
+    section {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    canvas { max-height: 360px; }
+    #status { color: #888; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>家庭記帳分析</h1>
+    <p id="status">載入中…</p>
+  </header>
+
+  <nav class="tabs">
+    <button data-view="month" class="active">月視圖</button>
+    <button data-view="year">年視圖</button>
+  </nav>
+
+  <div class="picker">
+    期間：<select id="period-select"></select>
+  </div>
+
+  <main>
+    <section class="chart-pie"><canvas id="pie"></canvas></section>
+    <section class="chart-bar"><canvas id="bar"></canvas></section>
+    <section class="chart-line"><canvas id="line"></canvas></section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
