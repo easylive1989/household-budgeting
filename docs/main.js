@@ -113,3 +113,83 @@ function renderMonthlyView(data, yyyymm) {
     },
   });
 }
+
+// ---- Yearly view ----
+function renderYearlyView(data, yyyy) {
+  destroyCharts();
+  // Collect all months belonging to that year
+  const monthsInYear = Object.keys(data.months)
+    .filter(m => m.startsWith(yyyy))
+    .sort();
+  if (monthsInYear.length === 0) {
+    setStatus(`${yyyy} 沒有資料`);
+    return;
+  }
+
+  // Aggregate by_category for the year
+  const cats = data.categories;
+  const yearCat = Object.fromEntries(cats.map(c => [c, 0]));
+  let yearTotal = 0;
+  for (const m of monthsInYear) {
+    for (const c of cats) {
+      yearCat[c] += data.months[m].by_category[c] || 0;
+    }
+    yearTotal += data.months[m].total || 0;
+  }
+  setStatus(`年視圖:${yyyy}（總額 ${yearTotal.toLocaleString()}）`);
+
+  // --- Pie: yearly by_category ---
+  chartInstances.pie = new Chart(document.getElementById("pie"), {
+    type: "pie",
+    data: {
+      labels: cats,
+      datasets: [{
+        data: cats.map(c => yearCat[c]),
+        backgroundColor: cats.map(c => CATEGORY_COLORS[c]),
+      }],
+    },
+    options: {
+      plugins: { title: { display: true, text: `${yyyy} 年度分類佔比` } },
+    },
+  });
+
+  // --- Bar: 12 months total ---
+  const months12 = Array.from({ length: 12 }, (_, i) => `${yyyy}${String(i+1).padStart(2,"0")}`);
+  const monthTotals = months12.map(m => (data.months[m] ? data.months[m].total : 0));
+  chartInstances.bar = new Chart(document.getElementById("bar"), {
+    type: "bar",
+    data: {
+      labels: months12.map(m => m.slice(4)), // "01"..."12"
+      datasets: [{
+        label: "每月總支出",
+        data: monthTotals,
+        backgroundColor: "#2c5aa0",
+      }],
+    },
+    options: {
+      plugins: { title: { display: true, text: `${yyyy} 每月總支出` }, legend: { display: false } },
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+
+  // --- Line: cumulative total ---
+  let running = 0;
+  const cumulative = monthTotals.map(v => (running += v));
+  chartInstances.line = new Chart(document.getElementById("line"), {
+    type: "line",
+    data: {
+      labels: months12.map(m => m.slice(4)),
+      datasets: [{
+        label: "累計支出",
+        data: cumulative,
+        borderColor: "#c0392b",
+        backgroundColor: "#c0392b",
+        tension: 0.2,
+      }],
+    },
+    options: {
+      plugins: { title: { display: true, text: `${yyyy} 累計支出趨勢` }, legend: { display: false } },
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+}
