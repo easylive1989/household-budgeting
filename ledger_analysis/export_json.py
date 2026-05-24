@@ -1,5 +1,8 @@
 """Export monthly aggregates from Notion to docs/data.json for GitHub Pages."""
 
+import json
+from pathlib import Path
+
 TARGET_CATEGORIES = ["娛樂", "飲食", "日常用品", "水電管理費"]
 FUND_FIELDS = ["Paul", "Lily", "現金", "銀行存款"]
 
@@ -27,3 +30,30 @@ def aggregate_month(rows):
 
     total = sum(by_category.values())
     return {"by_category": by_category, "by_funds": by_funds, "total": total}
+
+
+def load_existing_data(path):
+    """Read existing data.json or return empty skeleton if file doesn't exist."""
+    path = Path(path)
+    if not path.exists():
+        return {
+            "generated_at": None,
+            "categories": list(TARGET_CATEGORIES),
+            "members": ["Paul", "Lily"],
+            "months": {},
+        }
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def merge_month(data, yyyymm, month_agg):
+    """Insert or overwrite the given month's aggregate in data['months']."""
+    data["months"][yyyymm] = month_agg
+
+
+def save_data(path, data):
+    """Write data as pretty-printed JSON (ensure_ascii=False for Chinese)."""
+    path = Path(path)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )

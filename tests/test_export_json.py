@@ -1,4 +1,12 @@
-from ledger_analysis.export_json import aggregate_month
+import json
+from pathlib import Path
+
+from ledger_analysis.export_json import (
+    aggregate_month,
+    load_existing_data,
+    merge_month,
+    save_data,
+)
 
 
 def _row(category, paul=None, lily=None, cash=None, bank=None):
@@ -87,3 +95,56 @@ def test_aggregate_month_returns_zeros_for_missing_target_categories():
         "日常用品": 0,
         "水電管理費": 0,
     }
+
+
+def test_load_existing_data_returns_empty_skeleton_when_file_missing(tmp_path):
+    data = load_existing_data(tmp_path / "missing.json")
+    assert data == {
+        "generated_at": None,
+        "categories": ["娛樂", "飲食", "日常用品", "水電管理費"],
+        "members": ["Paul", "Lily"],
+        "months": {},
+    }
+
+
+def test_load_existing_data_reads_existing_file(tmp_path):
+    f = tmp_path / "data.json"
+    f.write_text(json.dumps({
+        "generated_at": "2024-01-01",
+        "categories": ["A"],
+        "members": ["B"],
+        "months": {"202312": {"total": 100}},
+    }))
+
+    data = load_existing_data(f)
+    assert data["months"]["202312"]["total"] == 100
+
+
+def test_merge_month_inserts_new_month():
+    data = {"months": {}}
+    month_agg = {"by_category": {"飲食": 500}, "by_funds": {"Paul": 500}, "total": 500}
+
+    merge_month(data, "202504", month_agg)
+
+    assert data["months"]["202504"] == month_agg
+
+
+def test_merge_month_overwrites_existing_month():
+    data = {"months": {"202504": {"total": 999}}}
+    new_agg = {"by_category": {}, "by_funds": {}, "total": 500}
+
+    merge_month(data, "202504", new_agg)
+
+    assert data["months"]["202504"]["total"] == 500
+
+
+def test_save_data_writes_json_with_indent(tmp_path):
+    f = tmp_path / "out.json"
+    data = {"months": {"202504": {"total": 500}}}
+
+    save_data(f, data)
+
+    loaded = json.loads(f.read_text())
+    assert loaded == data
+    # Should be human-readable (indented)
+    assert "\n  " in f.read_text()
