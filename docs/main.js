@@ -125,7 +125,20 @@ function renderYearlyView(data, yyyy) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { title: { display: true, text: `${yyyy} 各分類每月支出` } },
+      interaction: { mode: "index", intersect: false }, // hover anywhere on x → all categories' values
+      plugins: {
+        title: { display: true, text: `${yyyy} 各分類每月支出` },
+        tooltip: { mode: "index", intersect: false },
+        legend: {
+          // Toggle dataset visibility without animation
+          onClick(e, legendItem, legend) {
+            const ci = legend.chart;
+            const idx = legendItem.datasetIndex;
+            ci.setDatasetVisibility(idx, !ci.isDatasetVisible(idx));
+            ci.update("none");
+          },
+        },
+      },
       scales: { y: { beginAtZero: true } },
     },
   });
