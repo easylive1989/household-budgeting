@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+import datetime
 
 from ledger_analysis.export_json import (
     aggregate_month,
@@ -148,3 +150,45 @@ def test_save_data_writes_json_with_indent(tmp_path):
     assert loaded == data
     # Should be human-readable (indented)
     assert "\n  " in f.read_text()
+
+
+def test_main_queries_last_month_aggregates_and_writes_json(tmp_path, monkeypatch):
+    # Fix "today" to 2025-05-15 → last month is 2025-04
+    fake_today = datetime.date(2025, 5, 15)
+
+    class FakeDate(datetime.date):
+        @classmethod
+        def today(cls):
+            return fake_today
+
+    monkeypatch.setattr("ledger_analysis.export_json.date", FakeDate)
+    monkeypatch.setenv("NOTION_SECRET", "fake-token")
+
+    fake_rows = [
+        {"properties": {
+            "分類": {"select": {"name": "飲食"}},
+            "Paul": {"number": -1000},
+            "Lily": {"number": None},
+            "現金": {"number": None},
+            "銀行存款": {"number": None},
+        }}
+    ]
+
+    output_path = tmp_path / "data.json"
+
+    with patch("ledger_analysis.export_json.NotionApi") as MockApi:
+        mock_api = MagicMock()
+        MockApi.return_value = mock_api
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"results": fake_rows}
+        mock_api.query_database.return_value = mock_resp
+
+        from ledger_analysis.export_json import main
+        main(output_path)
+
+    import json
+    result = json.loads(output_path.read_text())
+    assert "202504" in result["months"]
+    assert result["months"]["202504"]["by_category"]["飲食"] == 1000
+    assert result["months"]["202504"]["by_funds"]["Paul"] == 1000
+    assert result["generated_at"] is not None
