@@ -13,8 +13,8 @@
 
 每月 1 號 UTC 0:00（台灣早上 8:00）自動執行 `.github/workflows/monthly-ledger-analysis.yml`，做：
 1. 跑 `ledger_analysis/ledger_analysis.py`：算上月 4 大分類加總，產 mermaid 圖寫進「每月分析」DB；建立關帳、開帳記錄
-2. 跑 `ledger_analysis/export_json.py`：把上月分類/資金來源加總寫進 `docs/data.json`
-3. 把 `docs/data.json` commit 回 main 並 push
+2. 跑 `ledger_analysis/export_json.py`：抓 Notion 完整歷史資料，重新產出 `docs/data.json`
+3. 上傳 `docs/` 內容到 GitHub Pages 並部署
 
 ## 3. 視覺化頁面（GitHub Pages）
 
@@ -32,7 +32,7 @@ URL：（Pages 啟用後填入，例如 `https://easylive1989.github.io/househol
 1. Repo Settings → Secrets and variables → Actions → New repository secret
    - Name: `NOTION_SECRET`
    - Value: 從 Notion → My integrations 取得的 token
-2. Repo Settings → Pages → Source: Deploy from a branch → Branch: `main`, folder: `/docs`
+2. Repo Settings → Pages → Source: GitHub Actions
 3. 在 iPhone 照 `shortcuts/shortcut-template.md` 建立捷徑
 4. 本地測試（可選）：
    ```bash

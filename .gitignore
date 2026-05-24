@@ -15,3 +15,6 @@ venv/
 
 # Secrets — never commit
 .env
+
+# Generated each run by GitHub Action, never committed
+docs/data.json
