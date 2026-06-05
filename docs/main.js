@@ -81,29 +81,22 @@ function renderYearlyView(data, yyyy) {
     },
   });
 
-  // --- Bar: cumulative spending (running total through each month) ---
-  let running = 0;
-  const cumulative = months12.map(m => {
-    if (data.months[m]) {
-      running += data.months[m].total;
-      return running;
-    }
-    return null; // no bar for future months
-  });
+  // --- Bar: monthly spending (each month's total) ---
+  const monthly = months12.map(m => data.months[m] ? data.months[m].total : null);
   chartInstances.bar = new Chart(document.getElementById("bar"), {
     type: "bar",
     data: {
       labels: months12.map(m => m.slice(4)),
       datasets: [{
-        label: "累積支出",
-        data: cumulative,
+        label: "每月支出",
+        data: monthly,
         backgroundColor: "#2c5aa0",
       }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { title: { display: true, text: `${yyyy} 累積支出` }, legend: { display: false } },
+      plugins: { title: { display: true, text: `${yyyy} 每月支出` }, legend: { display: false } },
       scales: { y: { beginAtZero: true } },
     },
   });
