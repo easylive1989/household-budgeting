@@ -203,7 +203,7 @@ else:
 ledger_database_id = '43c59e00321e49a69d85037f0f45ba7e'
 ledger_props = notion_api.get_property_names_by_type(ledger_database_id, ['title'])
 
-# 創建關帳記錄（沖銷歸零），時間記在上個月最後一天的最後一秒
+# 創建關帳記錄（沖銷歸零），時間記在上個月最後一天 23:59（Notion 只存到分鐘）
 close_time = close_timestamp(last_day_of_last_month)
 close_properties = {
     ledger_props['title']: {

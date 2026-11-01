@@ -4,7 +4,10 @@ TAIPEI = datetime.timezone(datetime.timedelta(hours=8))
 
 
 def close_timestamp(last_day):
-    """關帳記錄的時間：該日台灣時間的最後一秒（ISO 8601，帶時區）。"""
+    """關帳記錄的時間：該日台灣時間 23:59:59（ISO 8601，帶時區）。
+
+    Notion 只存到分鐘，秒數會被捨去，實際存成 23:59:00。
+    """
     return datetime.datetime.combine(
         last_day, datetime.time(23, 59, 59), tzinfo=TAIPEI
     ).isoformat()

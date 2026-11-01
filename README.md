@@ -12,7 +12,7 @@
 ## 2. 自動月結（GitHub Action）
 
 每月 1 號 UTC 0:00（台灣早上 8:00）自動執行 `.github/workflows/monthly-ledger-analysis.yml`，做：
-1. 跑 `ledger_analysis/ledger_analysis.py`：算上月 4 大分類加總，產 mermaid 圖寫進「每月分析」DB；建立關帳（`修正時間` 記為上月最後一天 23:59:59 台灣時間）、開帳記錄
+1. 跑 `ledger_analysis/ledger_analysis.py`：算上月 4 大分類加總，產 mermaid 圖寫進「每月分析」DB；建立關帳（`修正時間` 記為上月最後一天 23:59 台灣時間，Notion 只存到分鐘）、開帳記錄
 2. 跑 `ledger_analysis/export_json.py`：抓 Notion 完整歷史資料，重新產出 `docs/data.json`
 3. 上傳 `docs/` 內容到 GitHub Pages 並部署
 
