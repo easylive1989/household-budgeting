@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from common.ledger import close_timestamp, is_close_record
 from common.notion import NotionApi
 import datetime
 import calendar
@@ -149,7 +150,14 @@ total_lily = 0
 total_cash = 0
 total_bank = 0
 
+title = first_day_of_last_month.strftime("%Y%m")
+close_title = f"{title} 關帳"
+
 for result in results_all:
+    # 關帳記錄的時間在當月區間內，重跑時要排除，否則總額會被沖銷成 0
+    if is_close_record(result, close_title):
+        continue
+
     catalog = result["properties"]["分類"]["select"]["name"]
 
     paul = 0 if result["properties"]["Paul"]["number"] is None else result["properties"]["Paul"]["number"]
@@ -164,8 +172,6 @@ for result in results_all:
     total_bank += bank
     
     print(f"開帳關帳數據 - {catalog}: (paul: {paul}), (lily: {lily}), (cash: {cash}), (bank: {bank})")
-
-title = first_day_of_last_month.strftime("%Y%m")
 
 # 寫入新的分析結果 DB（結構化欄位，不含 Mermaid block）
 result_database_id = '36a8303f78f780d2886bc082a46a51dd'
@@ -197,8 +203,8 @@ else:
 ledger_database_id = '43c59e00321e49a69d85037f0f45ba7e'
 ledger_props = notion_api.get_property_names_by_type(ledger_database_id, ['title'])
 
-# 創建關帳記錄（沖銷歸零）
-close_title = f"{title} 關帳"
+# 創建關帳記錄（沖銷歸零），時間記在上個月最後一天的最後一秒
+close_time = close_timestamp(last_day_of_last_month)
 close_properties = {
     ledger_props['title']: {
         "title": [
@@ -212,6 +218,11 @@ close_properties = {
     "分類": {
         "select": {
             "name": "財務整理"
+        }
+    },
+    "修正時間": {
+        "date": {
+            "start": close_time
         }
     },
     "Paul": {
@@ -263,7 +274,7 @@ open_properties = {
 if notion_api.check_record_exists(ledger_database_id, ledger_props['title'], close_title):
     print(f"關帳記錄 '{close_title}' 已存在，跳過創建")
 elif DRY_RUN:
-    print(f"[DRY RUN] 會創建關帳記錄: {close_title} (Paul: {-total_paul}, Lily: {-total_lily}, 現金: {-total_cash}, 銀行: {-total_bank})")
+    print(f"[DRY RUN] 會創建關帳記錄: {close_title} (修正時間: {close_time}, Paul: {-total_paul}, Lily: {-total_lily}, 現金: {-total_cash}, 銀行: {-total_bank})")
 else:
     # 創建關帳記錄
     close_response = notion_api.create_page(ledger_database_id, close_properties)
