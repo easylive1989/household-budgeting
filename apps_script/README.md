@@ -28,16 +28,20 @@ GitHub Action 每月跑 `ledger_analysis/export_sheet.py`，把 Notion「分析�
 先確認 token 錯誤時會被拒絕，而且分頁不會被改動：
 
 ```bash
-curl -sL -X POST "$SHEET_WEBAPP_URL" -H 'Content-Type: application/json' -d '{"token":"wrong","header":[],"rows":[]}'
+curl -sL "$SHEET_WEBAPP_URL" -H 'Content-Type: application/json' -d '{"token":"wrong","header":[],"rows":[]}'
 ```
 
 預期回應是 `{"ok":false,"error":"unauthorized"}`。
+
+> 不要加 `-X POST`：Apps Script 會 302 轉址到只接受 GET 的網址，`-X POST` 會讓 curl 轉址後仍用 POST，結果拿到「找不到網頁」。
 
 再實際寫入一次：
 
 ```bash
 SHEET_WEBAPP_URL=... SHEET_TOKEN=... NOTION_SECRET=... python ledger_analysis/export_sheet.py
 ```
+
+macOS 用 python.org 安裝的 Python 若出現 `CERTIFICATE_VERIFY_FAILED`，在指令前加上 `SSL_CERT_FILE=$(python -m certifi)`。
 
 ## 修改程式之後
 

@@ -247,7 +247,7 @@ SHEET_WEBAPP_URL=... SHEET_TOKEN=... NOTION_SECRET=... python ledger_analysis/ex
 Run:
 
 ```bash
-curl -sL -X POST "$SHEET_WEBAPP_URL" -H 'Content-Type: application/json' -d '{"token":"wrong","header":[],"rows":[]}'
+curl -sL "$SHEET_WEBAPP_URL" -H 'Content-Type: application/json' -d '{"token":"wrong","header":[],"rows":[]}'
 ```
 
 Expected: `{"ok":false,"error":"unauthorized"}`，而且「家庭月統計」分頁沒有被建立或修改
