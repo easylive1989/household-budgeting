@@ -9,6 +9,9 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import json
+import urllib.request
+
 from common.notion import NotionApi
 
 CATEGORIES = ["娛樂", "飲食", "日常用品", "水電管理費"]
@@ -73,3 +76,47 @@ def build_rows(months):
         ]
         for yyyymm in sorted(months)
     ]
+
+
+def post_rows(url, token, header, rows, opener=urllib.request.urlopen):
+    """POST rows to the Apps Script Web App. Returns its JSON reply or raises RuntimeError."""
+    body = json.dumps(
+        {"token": token, "header": header, "rows": rows}, ensure_ascii=False
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    # urlopen follows Apps Script's 302 redirect to the response body
+    with opener(req, timeout=60) as resp:
+        text = resp.read().decode("utf-8")
+    try:
+        reply = json.loads(text)
+    except ValueError:
+        raise RuntimeError(f"Web App did not return JSON: {text[:200]}")
+    if not isinstance(reply, dict) or reply.get("ok") is not True:
+        raise RuntimeError(f"Web App rejected the update: {reply}")
+    return reply
+
+
+def main():
+    url = os.environ["SHEET_WEBAPP_URL"]
+    token = os.environ["SHEET_TOKEN"]
+    api = NotionApi(os.environ["NOTION_SECRET"])
+
+    months = {}
+    for page in fetch_all_pages(api, ANALYSIS_DB_ID):
+        result = page_to_month_entry(page)
+        if result is not None:
+            yyyymm, entry = result
+            months[yyyymm] = entry
+
+    if not months:
+        sys.exit("No months found in analysis DB; refusing to overwrite sheet")
+
+    rows = build_rows(months)
+    post_rows(url, token, HEADER, rows)
+    print(f"Wrote {len(rows)} months to sheet: {rows[0][0]}..{rows[-1][0]}")
+
+
+if __name__ == "__main__":
+    main()

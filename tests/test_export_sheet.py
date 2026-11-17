@@ -139,3 +139,87 @@ def test_build_rows_sorted_by_month_with_column_order():
 
 def test_build_rows_empty():
     assert build_rows({}) == []
+
+
+# ---- post_rows / main ----
+
+import pytest
+
+from ledger_analysis import export_sheet
+
+
+def _resp(body):
+    r = MagicMock()
+    r.read.return_value = body.encode("utf-8")
+    r.__enter__.return_value = r
+    r.__exit__.return_value = False
+    return r
+
+
+def _set_env(monkeypatch):
+    for k, v in {"NOTION_SECRET": "n", "SHEET_WEBAPP_URL": "u", "SHEET_TOKEN": "t"}.items():
+        monkeypatch.setenv(k, v)
+
+
+def test_post_rows_sends_token_header_rows_as_json():
+    captured = {}
+
+    def opener(req, timeout=None):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["ctype"] = req.headers.get("Content-type")
+        captured["method"] = req.get_method()
+        return _resp('{"ok": true, "rows": 1}')
+
+    out = export_sheet.post_rows("https://x", "tok", ["月份"], [["202501"]], opener=opener)
+    assert out == {"ok": True, "rows": 1}
+    assert captured["body"] == {"token": "tok", "header": ["月份"], "rows": [["202501"]]}
+    assert captured["ctype"] == "application/json"
+    assert captured["method"] == "POST"
+
+
+def test_post_rows_raises_when_ok_false():
+    opener = lambda req, timeout=None: _resp('{"ok": false, "error": "unauthorized"}')
+    with pytest.raises(RuntimeError, match="unauthorized"):
+        export_sheet.post_rows("https://x", "bad", [], [], opener=opener)
+
+
+def test_post_rows_raises_on_non_json_response():
+    opener = lambda req, timeout=None: _resp("<html>Sign in</html>")
+    with pytest.raises(RuntimeError, match="Sign in"):
+        export_sheet.post_rows("https://x", "tok", [], [], opener=opener)
+
+
+def test_main_requires_sheet_env_before_calling_notion(monkeypatch):
+    monkeypatch.setenv("NOTION_SECRET", "n")
+    monkeypatch.delenv("SHEET_WEBAPP_URL", raising=False)
+    monkeypatch.setenv("SHEET_TOKEN", "t")
+    api_cls = MagicMock()
+    monkeypatch.setattr(export_sheet, "NotionApi", api_cls)
+    with pytest.raises(KeyError):
+        export_sheet.main()
+    api_cls.assert_not_called()
+
+
+def test_main_refuses_to_post_when_no_months(monkeypatch):
+    _set_env(monkeypatch)
+    monkeypatch.setattr(export_sheet, "NotionApi", MagicMock())
+    monkeypatch.setattr(export_sheet, "fetch_all_pages", lambda api, db: [_make_page("Other")])
+    post = MagicMock()
+    monkeypatch.setattr(export_sheet, "post_rows", post)
+    with pytest.raises(SystemExit):
+        export_sheet.main()
+    post.assert_not_called()
+
+
+def test_main_posts_sorted_rows(monkeypatch):
+    _set_env(monkeypatch)
+    monkeypatch.setattr(export_sheet, "NotionApi", MagicMock())
+    pages = [_make_page("202502", total=2), _make_page("202501", total=1)]
+    monkeypatch.setattr(export_sheet, "fetch_all_pages", lambda api, db: pages)
+    post = MagicMock(return_value={"ok": True, "rows": 2})
+    monkeypatch.setattr(export_sheet, "post_rows", post)
+    export_sheet.main()
+    url, token, header, rows = post.call_args.args
+    assert (url, token, header) == ("u", "t", export_sheet.HEADER)
+    assert [r[0] for r in rows] == ["202501", "202502"]
+    assert [r[-1] for r in rows] == [1, 2]
