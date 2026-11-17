@@ -48,24 +48,40 @@ function reply_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+const CHART_DATA_SHEET = "圖表資料";
+const CHART_MONTHS = 12;
+
 /**
  * 在「家庭月統計」分頁右側建立「每月分類佔比」圖表（手動在編輯器執行一次即可）。
  * 100% 堆疊長條：每月一根，四個分類依佔比切分，大額月份不會壓扁其他月份。
- * 會先移除這個分頁上既有的圖表再重建，可重跑。
- * 範圍用整欄，之後每月新增的列會自動帶進圖表。
+ *
+ * 只顯示最新 12 個月：doPost 每次會清空「家庭月統計」，所以公式放在隱藏分頁
+ * 「圖表資料」，用 QUERY 取最新 12 個月再依時間排序，新月份寫入後自動往後滾。
+ * 會先移除既有圖表、重寫公式再重建，可重跑。
  */
 function setupCharts() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) throw new Error("找不到分頁：" + SHEET_NAME);
+
+  const data = ss.getSheetByName(CHART_DATA_SHEET) || ss.insertSheet(CHART_DATA_SHEET);
+  data.clear();
+  // 第 1 列：標題；第 2 列起：最新 N 個月，依月份由舊到新
+  data.getRange("A1").setFormula(
+    "={'" + SHEET_NAME + "'!A1:E1; SORT(QUERY('" + SHEET_NAME + "'!A2:E, " +
+    "\"select * where A is not null order by A desc limit " + CHART_MONTHS + "\", 0), 1, TRUE)}"
+  );
+  data.hideSheet();
 
   sheet.getCharts().forEach(function (c) { sheet.removeChart(c); });
 
-  // A 欄月份 + B:E 四個分類（娛樂 / 飲食 / 日常用品 / 水電管理費）
+  // 月份 + 四個分類（娛樂 / 飲食 / 日常用品 / 水電管理費）
   const chart = sheet.newChart().asColumnChart()
-    .addRange(sheet.getRange("A:E"))
+    .addRange(data.getRange(1, 1, CHART_MONTHS + 1, 5))
     .setNumHeaders(1)
+    .setHiddenDimensionStrategy(Charts.ChartHiddenDimensionStrategy.SHOW_BOTH)
     .setOption("isStacked", "percent")
-    .setOption("title", "每月分類佔比")
+    .setOption("title", "每月分類佔比（最近 " + CHART_MONTHS + " 個月）")
     .setOption("width", 1000)
     .setOption("height", 440)
     .setOption("legend", { position: "top" })
