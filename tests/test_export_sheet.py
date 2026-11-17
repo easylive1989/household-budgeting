@@ -1,10 +1,11 @@
 import json
 from unittest.mock import patch, MagicMock
 
-from ledger_analysis.export_json import (
+from ledger_analysis.export_sheet import (
+    HEADER,
+    build_rows,
     fetch_all_pages,
     page_to_month_entry,
-    save_data,
 )
 
 
@@ -118,46 +119,23 @@ def test_fetch_all_pages_multi_page_follows_cursor():
     assert payloads[2]["start_cursor"] == "c2"
 
 
-def test_save_data_writes_json_with_indent(tmp_path):
-    f = tmp_path / "out.json"
-    data = {"months": {"202504": {"total": 500}}}
-
-    save_data(f, data)
-
-    loaded = json.loads(f.read_text())
-    assert loaded == data
-    assert "\n  " in f.read_text()
+def test_header_matches_spec():
+    assert HEADER == ["月份", "娛樂", "飲食", "日常用品", "水電管理費",
+                      "Paul", "Lily", "現金", "銀行存款", "總額"]
 
 
-def test_main_reads_pages_and_writes_json(tmp_path, monkeypatch):
-    """End-to-end: paginated analysis-DB pages → JSON file, non-YYYYMM rows skipped."""
-    monkeypatch.setenv("NOTION_SECRET", "fake-token")
-
-    pages = [
-        _make_page("202504", by_category={"飲食": 1000}, by_funds={"Paul": 1000}, total=1000),
-        _make_page("Other Random Page"),  # should be skipped
-        _make_page("202505", by_category={"娛樂": 500}, by_funds={"Lily": 500}, total=500),
+def test_build_rows_sorted_by_month_with_column_order():
+    months = {
+        "202505": {"by_category": {"娛樂": 1, "飲食": 2, "日常用品": 3, "水電管理費": 4},
+                   "by_funds": {"Paul": 5, "Lily": 6, "現金": 7, "銀行存款": 8}, "total": 10},
+        "202412": {"by_category": {"娛樂": 0, "飲食": 0, "日常用品": 0, "水電管理費": 0},
+                   "by_funds": {"Paul": 0, "Lily": 0, "現金": 0, "銀行存款": 0}, "total": 0},
+    }
+    assert build_rows(months) == [
+        ["202412", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["202505", 1, 2, 3, 4, 5, 6, 7, 8, 10],
     ]
 
-    output_path = tmp_path / "data.json"
 
-    with patch("ledger_analysis.export_json.NotionApi") as MockApi:
-        mock_api = MagicMock()
-        MockApi.return_value = mock_api
-        resp = MagicMock()
-        resp.json.return_value = {"results": pages, "has_more": False, "next_cursor": None}
-        mock_api.query_database.return_value = resp
-
-        from ledger_analysis.export_json import main
-        main(output_path)
-
-    result = json.loads(output_path.read_text())
-
-    assert result["categories"] == CATEGORIES
-    assert result["members"] == ["Paul", "Lily"]
-    assert result["generated_at"] is not None
-    assert set(result["months"].keys()) == {"202504", "202505"}
-    assert result["months"]["202504"]["total"] == 1000
-    assert result["months"]["202504"]["by_category"]["飲食"] == 1000
-    assert result["months"]["202505"]["by_category"]["娛樂"] == 500
-    assert result["months"]["202505"]["by_funds"]["Lily"] == 500
+def test_build_rows_empty():
+    assert build_rows({}) == []

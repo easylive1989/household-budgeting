@@ -1,23 +1,20 @@
-"""Export monthly aggregates from the analysis DB to docs/data.json for GitHub Pages.
+"""Export monthly aggregates from the analysis DB to the「家庭月統計」Google Sheet tab.
 
 Source: 分析結果 DB（36a8303f...）。每筆 row 就是一個月的結構化彙總，
-直接讀 properties，不再做聚合。
+直接讀 properties，不再做聚合。結果 POST 給試算表的 Apps Script Web App
+（見 apps_script/），由它全量覆寫「家庭月統計」分頁。
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import json
-from datetime import datetime, timezone
-from pathlib import Path
-
 from common.notion import NotionApi
 
 CATEGORIES = ["娛樂", "飲食", "日常用品", "水電管理費"]
 FUND_FIELDS = ["Paul", "Lily", "現金", "銀行存款"]
+HEADER = ["月份", *CATEGORIES, *FUND_FIELDS, "總額"]
 ANALYSIS_DB_ID = "36a8303f78f780d2886bc082a46a51dd"
-DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "docs" / "data.json"
 
 
 def fetch_all_pages(api, db_id):
@@ -65,39 +62,14 @@ def page_to_month_entry(page):
     return title_value, entry
 
 
-def save_data(path, data):
-    path = Path(path)
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-
-def main(output_path=DEFAULT_OUTPUT):
-    token = os.environ["NOTION_SECRET"]
-    api = NotionApi(token)
-
-    pages = fetch_all_pages(api, ANALYSIS_DB_ID)
-    months = {}
-    for page in pages:
-        result = page_to_month_entry(page)
-        if result is None:
-            continue
-        yyyymm, entry = result
-        months[yyyymm] = entry
-
-    data = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "categories": list(CATEGORIES),
-        "members": ["Paul", "Lily"],
-        "months": months,
-    }
-    save_data(output_path, data)
-    print(
-        f"Exported {len(months)} months from {len(pages)} pages: "
-        f"{sorted(months.keys())}"
-    )
-
-
-if __name__ == "__main__":
-    main()
+def build_rows(months):
+    """Turn {yyyymm: entry} into sheet rows ordered by month, columns as HEADER."""
+    return [
+        [
+            yyyymm,
+            *(months[yyyymm]["by_category"][c] for c in CATEGORIES),
+            *(months[yyyymm]["by_funds"][f] for f in FUND_FIELDS),
+            months[yyyymm]["total"],
+        ]
+        for yyyymm in sorted(months)
+    ]
