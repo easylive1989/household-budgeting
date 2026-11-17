@@ -49,7 +49,8 @@ function reply_(obj) {
 }
 
 /**
- * 在「家庭月統計」分頁右側建立圖表（手動在編輯器執行一次即可）。
+ * 在「家庭月統計」分頁右側建立「每月分類佔比」圖表（手動在編輯器執行一次即可）。
+ * 100% 堆疊長條：每月一根，四個分類依佔比切分，大額月份不會壓扁其他月份。
  * 會先移除這個分頁上既有的圖表再重建，可重跑。
  * 範圍用整欄，之後每月新增的列會自動帶進圖表。
  */
@@ -59,40 +60,18 @@ function setupCharts() {
 
   sheet.getCharts().forEach(function (c) { sheet.removeChart(c); });
 
-  const col = 12; // L 欄，放在資料右側
-  const common = function (builder, title, row) {
-    return builder
-      .setOption("title", title)
-      .setOption("width", 760)
-      .setOption("height", 360)
-      .setOption("legend", { position: "top" })
-      .setOption("hAxis", { slantedText: true, slantedTextAngle: 45 })
-      .setNumHeaders(1)
-      .setPosition(row, col, 0, 0)
-      .build();
-  };
-
-  // 1. 每月分類支出（堆疊長條）：A 欄月份 + B:E 四個分類
-  sheet.insertChart(common(
-    sheet.newChart().asColumnChart().setStacked()
-      .addRange(sheet.getRange("A:E"))
-      .setOption("colors", ["#E57373", "#81C784", "#FFD54F", "#64B5F6"]),
-    "每月分類支出", 1));
-
-  // 2. 每月資金來源（堆疊長條）：A 欄月份 + F:I（Paul / Lily / 現金 / 銀行存款）
-  sheet.insertChart(common(
-    sheet.newChart().asColumnChart().setStacked()
-      .addRange(sheet.getRange("A:A"))
-      .addRange(sheet.getRange("F:I"))
-      .setOption("colors", ["#5C6BC0", "#EC407A", "#8D6E63", "#26A69A"]),
-    "每月資金來源", 20));
-
-  // 3. 每月總額（折線）：A 欄月份 + J 欄總額
-  sheet.insertChart(common(
-    sheet.newChart().asLineChart()
-      .addRange(sheet.getRange("A:A"))
-      .addRange(sheet.getRange("J:J"))
-      .setOption("colors", ["#455A64"])
-      .setOption("pointSize", 4),
-    "每月總額", 39));
+  // A 欄月份 + B:E 四個分類（娛樂 / 飲食 / 日常用品 / 水電管理費）
+  const chart = sheet.newChart().asColumnChart()
+    .addRange(sheet.getRange("A:E"))
+    .setNumHeaders(1)
+    .setOption("isStacked", "percent")
+    .setOption("title", "每月分類佔比")
+    .setOption("width", 1000)
+    .setOption("height", 440)
+    .setOption("legend", { position: "top" })
+    .setOption("hAxis", { slantedText: true, slantedTextAngle: 45 })
+    .setOption("colors", ["#E57373", "#81C784", "#FFD54F", "#64B5F6"])
+    .setPosition(1, 12, 0, 0) // L1，放在資料右側
+    .build();
+  sheet.insertChart(chart);
 }
