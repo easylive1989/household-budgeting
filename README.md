@@ -19,7 +19,7 @@
 
 試算表：https://docs.google.com/spreadsheets/d/1yGqmUqYheFhM4VsbAptVyHp1k3InpV6GdiPjI_zSzFw/edit
 
-- 「家庭月統計」分頁：每月一列，欄位 `月份 | 娛樂 | 飲食 | 日常用品 | 水電管理費 | Paul | Lily | 現金 | 銀行存款 | 總額`
+- 「家庭月統計」分頁：每月一列，最新月份在最上面，欄位 `月份 | 娛樂 | 飲食 | 日常用品 | 水電管理費 | Paul | Lily | 現金 | 銀行存款 | 總額`
 - 每次執行會整頁重寫，請勿在此分頁手動編輯
 - 「每月分類佔比」圖（100% 堆疊長條，只顯示最新 12 個月）由 Apps Script 的 `setupCharts()` 建立，資料來自隱藏分頁「圖表資料」的 `QUERY` 公式，新月份會自動往後滾動
 - Web App 程式與部署步驟見 `apps_script/README.md`

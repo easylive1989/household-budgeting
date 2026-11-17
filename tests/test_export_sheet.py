@@ -124,7 +124,7 @@ def test_header_matches_spec():
                       "Paul", "Lily", "現金", "銀行存款", "總額"]
 
 
-def test_build_rows_sorted_by_month_with_column_order():
+def test_build_rows_newest_month_first_with_column_order():
     months = {
         "202505": {"by_category": {"娛樂": 1, "飲食": 2, "日常用品": 3, "水電管理費": 4},
                    "by_funds": {"Paul": 5, "Lily": 6, "現金": 7, "銀行存款": 8}, "total": 10},
@@ -132,8 +132,8 @@ def test_build_rows_sorted_by_month_with_column_order():
                    "by_funds": {"Paul": 0, "Lily": 0, "現金": 0, "銀行存款": 0}, "total": 0},
     }
     assert build_rows(months) == [
-        ["202412", 0, 0, 0, 0, 0, 0, 0, 0, 0],
         ["202505", 1, 2, 3, 4, 5, 6, 7, 8, 10],
+        ["202412", 0, 0, 0, 0, 0, 0, 0, 0, 0],
     ]
 
 
@@ -221,5 +221,5 @@ def test_main_posts_sorted_rows(monkeypatch):
     export_sheet.main()
     url, token, header, rows = post.call_args.args
     assert (url, token, header) == ("u", "t", export_sheet.HEADER)
-    assert [r[0] for r in rows] == ["202501", "202502"]
-    assert [r[-1] for r in rows] == [1, 2]
+    assert [r[0] for r in rows] == ["202502", "202501"]
+    assert [r[-1] for r in rows] == [2, 1]

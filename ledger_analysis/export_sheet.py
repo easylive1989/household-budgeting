@@ -66,7 +66,7 @@ def page_to_month_entry(page):
 
 
 def build_rows(months):
-    """Turn {yyyymm: entry} into sheet rows ordered by month, columns as HEADER."""
+    """Turn {yyyymm: entry} into sheet rows, newest month first, columns as HEADER."""
     return [
         [
             yyyymm,
@@ -74,7 +74,7 @@ def build_rows(months):
             *(months[yyyymm]["by_funds"][f] for f in FUND_FIELDS),
             months[yyyymm]["total"],
         ]
-        for yyyymm in sorted(months)
+        for yyyymm in sorted(months, reverse=True)
     ]
 
 
@@ -115,7 +115,7 @@ def main():
 
     rows = build_rows(months)
     post_rows(url, token, HEADER, rows)
-    print(f"Wrote {len(rows)} months to sheet: {rows[0][0]}..{rows[-1][0]}")
+    print(f"Wrote {len(rows)} months to sheet: {rows[-1][0]}..{rows[0][0]}")
 
 
 if __name__ == "__main__":
