@@ -43,6 +43,16 @@ SHEET_WEBAPP_URL=... SHEET_TOKEN=... NOTION_SECRET=... python ledger_analysis/ex
 
 macOS 用 python.org 安裝的 Python 若出現 `CERTIFICATE_VERIFY_FAILED`，在指令前加上 `SSL_CERT_FILE=$(python -m certifi)`。
 
+## 圖表
+
+在 Apps Script 編輯器上方的函式選單選 `setupCharts`，然後按「執行」。它會在「家庭月統計」分頁的 L 欄建立三張圖：
+
+- 每月分類支出（堆疊長條）
+- 每月資金來源（堆疊長條）
+- 每月總額（折線）
+
+每次執行都會先刪掉這個分頁上的舊圖表再重建，所以可以重複執行。圖表的資料範圍是整欄，之後每月新增的列會自動加進圖表，不需要再執行一次。
+
 ## 修改程式之後
 
 1. 把新的 `Code.gs` 貼回 Apps Script 編輯器並存檔

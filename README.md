@@ -20,7 +20,8 @@
 試算表：https://docs.google.com/spreadsheets/d/1yGqmUqYheFhM4VsbAptVyHp1k3InpV6GdiPjI_zSzFw/edit
 
 - 「家庭月統計」分頁：每月一列，欄位 `月份 | 娛樂 | 飲食 | 日常用品 | 水電管理費 | Paul | Lily | 現金 | 銀行存款 | 總額`
-- 每次執行會整頁重寫，請勿在此分頁手動編輯；圖表請在試算表內建立，範圍指向整欄
+- 每次執行會整頁重寫，請勿在此分頁手動編輯
+- 圖表（每月分類支出、資金來源、總額）由 Apps Script 的 `setupCharts()` 建立，範圍為整欄，新月份會自動帶入
 - Web App 程式與部署步驟見 `apps_script/README.md`
 
 ## 4. iOS 捷徑
