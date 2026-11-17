@@ -13,15 +13,15 @@
 
 每月 1 號 UTC 0:00（台灣早上 8:00）自動執行 `.github/workflows/monthly-ledger-analysis.yml`，做：
 1. 跑 `ledger_analysis/ledger_analysis.py`：算上月 4 大分類加總，產 mermaid 圖寫進「每月分析」DB；建立關帳（`修正時間` 記為上月最後一天 23:59 台灣時間，Notion 只存到分鐘）、開帳記錄
-2. 跑 `ledger_analysis/export_json.py`：抓 Notion 完整歷史資料，重新產出 `docs/data.json`
-3. 上傳 `docs/` 內容到 GitHub Pages 並部署
+2. 跑 `ledger_analysis/export_sheet.py`：抓 Notion「分析」DB 所有月份，POST 給 Apps Script Web App，全量覆寫「消費分析」試算表的「家庭月統計」分頁
 
-## 3. 視覺化頁面（GitHub Pages）
+## 3. Google Sheet 統計
 
-URL：（Pages 啟用後填入，例如 `https://easylive1989.github.io/household-budgeting/`）
+試算表：https://docs.google.com/spreadsheets/d/1yGqmUqYheFhM4VsbAptVyHp1k3InpV6GdiPjI_zSzFw/edit
 
-- 月視圖：圓餅(分類佔比) / 長條(資金來源支出) / 折線(過去 6 個月分類趨勢)
-- 年視圖:圓餅(年度分類佔比) / 長條(12 個月總支出) / 折線(累計支出趨勢)
+- 「家庭月統計」分頁：每月一列，欄位 `月份 | 娛樂 | 飲食 | 日常用品 | 水電管理費 | Paul | Lily | 現金 | 銀行存款 | 總額`
+- 每次執行會整頁重寫，請勿在此分頁手動編輯；圖表請在試算表內建立，範圍指向整欄
+- Web App 程式與部署步驟見 `apps_script/README.md`
 
 ## 4. iOS 捷徑
 
@@ -32,15 +32,16 @@ URL：（Pages 啟用後填入，例如 `https://easylive1989.github.io/househol
 1. Repo Settings → Secrets and variables → Actions → New repository secret
    - Name: `NOTION_SECRET`
    - Value: 從 Notion → My integrations 取得的 token
-2. Repo Settings → Pages → Source: GitHub Actions
+2. 照 `apps_script/README.md` 部署 Web App，並新增 secrets `SHEET_WEBAPP_URL`、`SHEET_TOKEN`
 3. 在 iPhone 照 `shortcuts/shortcut-template.md` 建立捷徑
 4. 本地測試（可選）：
    ```bash
    python3 -m venv .venv && source .venv/bin/activate
    pip install -r requirements.txt
    export NOTION_SECRET="<your-token>"
-   python ledger_analysis/export_json.py    # 產 docs/data.json
-   cd docs && python3 -m http.server 8000   # 本地預覽
+   export SHEET_WEBAPP_URL="<web-app-url>"
+   export SHEET_TOKEN="<sheet-token>"
+   python ledger_analysis/export_sheet.py   # 寫入「家庭月統計」分頁
    ```
 
 ## 開發
@@ -58,14 +59,14 @@ pytest -v     # 跑單元測試
 ├── common/notion.py            # Notion SDK wrapper
 ├── ledger_analysis/
 │   ├── ledger_analysis.py      # 月結 + mermaid 圖
-│   └── export_json.py          # 匯出 docs/data.json
-├── docs/                       # GitHub Pages 根目錄
-│   ├── index.html
-│   ├── main.js
-│   └── data.json
+│   └── export_sheet.py         # 匯出到 Google Sheet
+├── apps_script/
+│   ├── Code.gs                 # 試算表 Web App（副本，需手動貼回部署）
+│   └── README.md               # 部署步驟
+├── docs/superpowers/           # 設計與計畫文件
 ├── shortcuts/
 │   └── shortcut-template.md
 └── tests/
     ├── test_notion.py
-    └── test_export_json.py
+    └── test_export_sheet.py
 ```
